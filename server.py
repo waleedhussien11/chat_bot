@@ -49,8 +49,9 @@ def index_docs(documents, category):
     for doc in documents:
         text = doc.page_content
         embedding = embeddings.embed_query(text)  # Convert text into embedding
+        doc_id = str(hash(text))  # Generate a unique ID for each document
         collection.add(
-            ids=[str(hash(text))],  # Unique ID for each document
+            ids=[doc_id],
             embeddings=[embedding],
             metadatas=[{"category": category, "text": text}]
         )
@@ -121,6 +122,45 @@ def ask_question():
         
         final_response = answer_question(question, relevant_docs)
         return jsonify({"answer": final_response}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/categories', methods=['GET'])
+def get_categories():
+    """Retrieve all unique categories stored in ChromaDB."""
+    try:
+        results = collection.get()
+        categories = set(metadata["category"] for metadata in results["metadatas"])
+        return jsonify({"categories": list(categories)}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/documents/<category>', methods=['GET'])
+def get_documents_by_category(category):
+    """Retrieve all documents stored under a specific category."""
+    try:
+        results = collection.get()
+        docs = [
+            {"id": results["ids"][i], "text": metadata["text"]}
+            for i, metadata in enumerate(results["metadatas"])
+            if metadata["category"] == category
+        ]
+        return jsonify({"documents": docs}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/delete_document', methods=['DELETE'])
+def delete_document():
+    """Delete a document from ChromaDB by ID."""
+    data = request.get_json()
+    doc_id = data.get("doc_id")
+
+    if not doc_id:
+        return jsonify({"error": "Document ID is required"}), 400
+
+    try:
+        collection.delete(ids=[doc_id])
+        return jsonify({"message": f"Document {doc_id} deleted successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
