@@ -1,24 +1,26 @@
 import os
 import tempfile
-from server import Flask, request, jsonify
+from flask import Flask, request, jsonify
+import chromadb
 from langchain_community.document_loaders import PDFPlumberLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_ollama import OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama.llms import OllamaLLM
 
 app = Flask(__name__)
 
-# Initialize components
+# Initialize ChromaDB and LangChain components
+chroma_client = chromadb.PersistentClient(path="./chroma_db")
+collection = chroma_client.get_or_create_collection(name="documents")
+
 embeddings = OllamaEmbeddings(model="qwen2.5:1.5b")
-vector_store = InMemoryVectorStore(embeddings)
 model = OllamaLLM(model="qwen2.5:1.5b")
 
-# Enhanced prompt template
+# Enhanced prompt
 template = """
 [SYSTEM]
-you are an assistant for the user, so don't make it look like you are thinking. Give conclusions directly and provide answers in an organized way.
+You are an assistant for the user. Provide answers in a direct, structured, and organized way.
 
 [CONTEXT]
 {context}
@@ -42,66 +44,82 @@ def split_text(documents):
         add_start_index=True
     ).split_documents(documents)
 
-def index_docs(documents):
-    """Index documents into the vector store."""
-    vector_store.add_documents(documents)
+def index_docs(documents, category):
+    """Store documents in ChromaDB with category metadata."""
+    for doc in documents:
+        text = doc.page_content
+        embedding = embeddings.embed_query(text)  # Convert text into embedding
+        collection.add(
+            ids=[str(hash(text))],  # Unique ID for each document
+            embeddings=[embedding],
+            metadatas=[{"category": category, "text": text}]
+        )
 
-def retrieve_docs(query):
-    """Retrieve relevant documents based on the query."""
-    return vector_store.similarity_search(query)
+def retrieve_docs(query, category):
+    """Retrieve relevant documents from ChromaDB filtered by category."""
+    query_embedding = embeddings.embed_query(query)
+    results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=5  # Retrieve top 5 relevant documents
+    )
+
+    # Filter by category
+    relevant_docs = []
+    for i, metadata in enumerate(results["metadatas"][0]):
+        if metadata["category"] == category:
+            relevant_docs.append(metadata["text"])
+    
+    return relevant_docs
 
 def answer_question(question, documents):
     """Generate an answer based on retrieved documents."""
-    context = "\n".join([doc.page_content for doc in documents])
+    context = "\n".join(documents)
     prompt = ChatPromptTemplate.from_template(template)
     chain = prompt | model
     raw_response = chain.invoke({"question": question, "context": context})
     
-    # Clean response to remove unwanted reasoning
-    clean_response = raw_response.strip()
-    if "[ANSWER]" in clean_response:
-        clean_response = clean_response.split("[ANSWER]")[-1].strip()
-    
-    return clean_response
+    return raw_response.strip()
 
 @app.route('/upload', methods=['POST'])
 def upload_pdf():
-    """Handle PDF upload and indexing."""
-    if 'file' not in request.files:
-        return jsonify({"error": "No file provided"}), 400
+    """Upload and store a PDF with a category in ChromaDB."""
+    if 'file' not in request.files or 'category' not in request.form:
+        return jsonify({"error": "File and category are required"}), 400
 
     file = request.files['file']
-    
+    category = request.form['category'].strip().lower()  # Normalize category name
+
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
 
     try:
-        # Save temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             file.save(tmp.name)
             docs = split_text(load_pdf(tmp.name))
         
-        # Index documents
-        index_docs(docs)
+        index_docs(docs, category)
         os.remove(tmp.name)
 
-        return jsonify({"message": "PDF processed and indexed successfully"}), 200
+        return jsonify({"message": f"PDF processed and indexed under category '{category}'"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route('/ask', methods=['POST'])
 def ask_question():
-    """Handle user queries about the uploaded PDF."""
+    """Retrieve relevant documents based on category and answer the question."""
     data = request.get_json()
     question = data.get("question")
+    category = data.get("category")
 
-    if not question:
-        return jsonify({"error": "No question provided"}), 400
+    if not question or not category:
+        return jsonify({"error": "Question and category are required"}), 400
 
     try:
-        relevant_docs = retrieve_docs(question)
-        final_response = answer_question(question, relevant_docs)
+        relevant_docs = retrieve_docs(question, category)
+        if not relevant_docs:
+            return jsonify({"answer": "No relevant documents found in this category."}), 200
         
+        final_response = answer_question(question, relevant_docs)
         return jsonify({"answer": final_response}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
