@@ -5,3 +5,4 @@ langchain_text_splitters
 pdfplumber
 pyngrok
 langchain_ollama
+streamlit_ngrok
