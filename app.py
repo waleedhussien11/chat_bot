@@ -25,7 +25,7 @@ you are assistant for user so, dont make it look on your thinking and say figure
 # Initialize components
 embeddings = OllamaEmbeddings(model="qwen2.5:1.5b")
 vector_store = InMemoryVectorStore(embeddings)
-model = OllamaLLM(model="qwen2.5:1.5b")
+model = OllamaLLM(model="qwen2.5:1.5b", base_url="http://192.168.1.100:11434")
 
 def load_pdf(file_path):
     loader = PDFPlumberLoader(file_path)
