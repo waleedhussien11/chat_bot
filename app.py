@@ -1,17 +1,16 @@
 import streamlit as st
 import tempfile
 import os
+from pyngrok import ngrok
 from langchain_community.document_loaders import PDFPlumberLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_ollama import OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama.llms import OllamaLLM
-from streamlit_ngrok import start_ngrok  # Import ngrok
 
-# Start ngrok to create a public link
-public_url = start_ngrok(8501)  # 8501 is the default Streamlit port
-
+# Start ngrok
+public_url = ngrok.connect(8501).public_url
 st.sidebar.write(f"🔗 **Public Link:** [Click to Access]({public_url})")
 
 # Enhanced prompt to suppress reasoning
