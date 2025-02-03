@@ -1,6 +1,8 @@
 streamlit
-langchain_core
+langchain
 langchain_community
-langchain_ollama
+langchain_text_splitters
 pdfplumber
 flask
+pyngrok
+langchain_ollama

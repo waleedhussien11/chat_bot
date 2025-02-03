@@ -1,12 +1,17 @@
 import streamlit as st
 import tempfile
 import os
+from pyngrok import ngrok
 from langchain_community.document_loaders import PDFPlumberLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_ollama import OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama.llms import OllamaLLM
+
+# Start ngrok
+public_url = ngrok.connect(8501).public_url
+st.sidebar.write(f"🔗 **Public Link:** [Click to Access]({public_url})")
 
 # Enhanced prompt to suppress reasoning
 template = """
@@ -25,7 +30,7 @@ you are assistant for user so, dont make it look on your thinking and say figure
 # Initialize components
 embeddings = OllamaEmbeddings(model="qwen2.5:1.5b")
 vector_store = InMemoryVectorStore(embeddings)
-model = OllamaLLM(model="qwen2.5:1.5b")
+model = OllamaLLM(model="qwen2.5:1.5b", base_url="http://192.168.1.100:11434")
 
 def load_pdf(file_path):
     loader = PDFPlumberLoader(file_path)
@@ -85,8 +90,6 @@ if uploaded_file:
         
         with st.chat_message("assistant"):
             if show_thinking:
-                # Show raw response (if thinking is enabled)
                 st.write("Thinking process is hidden by default. Enable 'Show Thinking Process' to view it.")
             else:
-                # Highlight final response only
                 st.markdown(f"**Final Response:**\n\n{final_response}", unsafe_allow_html=True)
